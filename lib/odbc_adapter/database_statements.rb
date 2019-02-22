@@ -10,7 +10,7 @@ module ODBCAdapter
     def execute(sql, name = nil, binds = [])
       log(sql, name) do
         if prepared_statements
-          @connection.do(sql, *prepared_binds(binds))
+          @connection.do(prepare_statement_sub(sql), *prepared_binds(binds))
         else
           @connection.do(sql)
         end
@@ -24,7 +24,7 @@ module ODBCAdapter
       log(sql, name) do
         stmt =
           if prepared_statements
-            @connection.run(sql, *prepared_binds(binds))
+            @connection.run(prepare_statement_sub(sql), *prepared_binds(binds))
           else
             @connection.run(sql)
           end
@@ -81,6 +81,10 @@ module ODBCAdapter
       values
     end
 
+    def prepare_statement_sub(sql)
+      sql.gsub(/\$\d+/, '?')
+    end
+
     # Assume received identifier is in DBMS's data dictionary case.
     def format_case(identifier)
       if database_metadata.upcase_identifiers?
@@ -128,7 +132,7 @@ module ODBCAdapter
     end
 
     def prepared_binds(binds)
-      prepare_binds_for_database(binds).map { |bind| _type_cast(bind) }
+      binds.map(&:value_for_database).map { |bind| _type_cast(bind) }
     end
   end
 end
