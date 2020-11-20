@@ -74,10 +74,15 @@ module ActiveRecord
 
       ADAPTER_NAME = 'ODBC'.freeze
       BOOLEAN_TYPE = 'BOOLEAN'.freeze
+      VARIANT_TYPE = 'VARIANT'.freeze
+      DATE_TYPE = 'DATE'.freeze
+      JSON_TYPE = 'JSON'.freeze
 
-      ERR_DUPLICATE_KEY_VALUE     = 23_505
-      ERR_QUERY_TIMED_OUT         = 57_014
-      ERR_QUERY_TIMED_OUT_MESSAGE = /Query has timed out/
+      ERR_DUPLICATE_KEY_VALUE                     = 23_505
+      ERR_QUERY_TIMED_OUT                         = 57_014
+      ERR_QUERY_TIMED_OUT_MESSAGE                 = /Query has timed out/
+      ERR_CONNECTION_FAILED_REGEX                 = '^08[0S]0[12347]'.freeze
+      ERR_CONNECTION_FAILED_MESSAGE               = /Client connection failed/
 
       # The object that stores the information that is fetched from the DBMS
       # when a connection is first established.
@@ -134,8 +139,8 @@ module ActiveRecord
       # Build a new column object from the given options. Effectively the same
       # as super except that it also passes in the native type.
       # rubocop:disable Metrics/ParameterLists
-      def new_column(name, default, sql_type_metadata, null, table_name, default_function = nil, collation = nil, native_type = nil)
-        ::ODBCAdapter::Column.new(name, default, sql_type_metadata, null, table_name, default_function, collation, native_type)
+      def new_column(name, default, sql_type_metadata, null, table_name, native_type = nil)
+        ::ODBCAdapter::Column.new(name, default, sql_type_metadata, null, table_name, native_type)
       end
 
       protected
@@ -144,6 +149,7 @@ module ActiveRecord
       # Here, ODBC and ODBC_UTF8 constants are interchangeable
       def initialize_type_map(map)
         map.register_type 'boolean',              Type::Boolean.new
+        map.register_type 'json',                 Type::Json.new
         map.register_type ODBC::SQL_CHAR,         Type::String.new
         map.register_type ODBC::SQL_LONGVARCHAR,  Type::Text.new
         map.register_type ODBC::SQL_TINYINT,      Type::Integer.new(limit: 4)
@@ -183,6 +189,13 @@ module ActiveRecord
           ActiveRecord::RecordNotUnique.new(message, exception)
         elsif error_number == ERR_QUERY_TIMED_OUT || exception.message =~ ERR_QUERY_TIMED_OUT_MESSAGE
           ::ODBCAdapter::QueryTimeoutError.new(message, exception)
+        elsif exception.message.match(ERR_CONNECTION_FAILED_REGEX) || exception.message =~ ERR_CONNECTION_FAILED_MESSAGE
+          begin
+            reconnect!
+            ::ODBCAdapter::ConnectionFailedError.new(message, exception)
+          rescue => e
+            puts "unable to reconnect #{e}"
+          end
         else
           super
         end
