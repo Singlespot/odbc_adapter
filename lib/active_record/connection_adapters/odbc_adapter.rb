@@ -1,4 +1,5 @@
 require 'active_record'
+require 'active_record/connection_adapters/deduplicable'
 require 'odbc'
 require 'odbc_utf8'
 
