@@ -9,11 +9,8 @@ module ODBCAdapter
     # Returns the number of rows affected.
     def execute(sql, name = nil, binds = [])
       log(sql, name) do
-        if prepared_statements
-          @connection.do(prepare_statement_sub(sql), *prepared_binds(binds))
-        else
-          @connection.do(sql)
-        end
+        sql = bind_params(binds, sql) if prepared_statements
+        @connection.do(sql)
       end
     end
 
@@ -22,12 +19,8 @@ module ODBCAdapter
     # the executed +sql+ statement.
     def exec_query(sql, name = 'SQL', binds = [], prepare: false) # rubocop:disable Lint/UnusedMethodArgument
       log(sql, name) do
-        stmt =
-          if prepared_statements
-            @connection.run(prepare_statement_sub(sql), *prepared_binds(binds))
-          else
-            @connection.run(sql)
-          end
+        sql = bind_params(binds, sql) if prepared_statements
+        stmt =  @connection.run(sql)
 
         columns = stmt.columns
         values  = stmt.to_a
@@ -81,8 +74,12 @@ module ODBCAdapter
       values
     end
 
-    def prepare_statement_sub(sql)
-      sql.gsub(/\$\d+/, '?')
+    def bind_params(binds, sql)
+      prepared_binds = *prepared_binds(binds)
+      prepared_binds.each.with_index(1) do |val, ind|
+        sql = sql.gsub("$#{ind}", "'#{val}'")
+      end
+      sql
     end
 
     # Assume received identifier is in DBMS's data dictionary case.
@@ -129,6 +126,11 @@ module ODBCAdapter
       # MySQL native ODBC driver doesn't report nullability accurately.
       # So force nullability of 'id' columns
       col_name == 'id' ? false : result
+    end
+
+    # Adapt to Rails 5.2
+    def prepare_statement_sub(sql)
+      sql.gsub(/\$\d+/, '?')
     end
 
     def prepared_binds(binds)
